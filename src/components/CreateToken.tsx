@@ -8,11 +8,14 @@ import {
 import {
   MINT_SIZE,
   TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountInstruction,
   createInitializeMintInstruction,
+  createMintToInstruction,
+  getAssociatedTokenAddress,
   getMinimumBalanceForRentExemptMint,
 } from "@solana/spl-token";
 import {
-  createCreateMetadataAccountInstruction,
+  createCreateMetadataAccountV3Instruction,
   PROGRAM_ID,
 } from "@metaplex-foundation/mpl-token-metadata";
 import { FC, useCallback, useState } from "react";
@@ -29,6 +32,7 @@ export const CreateToken: FC = () => {
   const [tokenSymbol, setTokenSymbol] = useState("");
   const [tokenUri, setTokenUri] = useState("");
   const [tokenDecimals, setTokenDecimals] = useState("9");
+  const [tokenSupply, setTokenSupply] = useState("0");
   const [tokenMintAddress, setTokenMintAddress] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -40,9 +44,43 @@ export const CreateToken: FC = () => {
 
     const lamports = await getMinimumBalanceForRentExemptMint(connection);
     const mintKeypair = Keypair.generate();
+    const tokenATA = await getAssociatedTokenAddress(mintKeypair.publicKey, publicKey);
+    console.log(tokenATA.toString());
 
     setIsLoading(true);
     try {
+      const createMetadataInstruction = createCreateMetadataAccountV3Instruction(
+        {
+          metadata: PublicKey.findProgramAddressSync(
+            [
+              Buffer.from("metadata"),
+              PROGRAM_ID.toBuffer(),
+              mintKeypair.publicKey.toBuffer(),
+            ],
+            PROGRAM_ID,
+          )[0],
+          mint: mintKeypair.publicKey,
+          mintAuthority: publicKey,
+          payer: publicKey,
+          updateAuthority: publicKey,
+        },
+        {
+          createMetadataAccountArgsV3: {
+            data: {
+              name: tokenName,
+              symbol: tokenSymbol,
+              uri: tokenUri,
+              creators: null,
+              sellerFeeBasisPoints: 0,
+              uses: null,
+              collection: null,
+            },
+            isMutable: false,
+            collectionDetails: null,
+          },
+        },
+      );
+
       const tx = new Transaction().add(
         SystemProgram.createAccount({
           fromPubkey: publicKey,
@@ -59,37 +97,19 @@ export const CreateToken: FC = () => {
           publicKey,
           TOKEN_PROGRAM_ID,
         ),
-
-        createCreateMetadataAccountInstruction(
-          {
-            metadata: (
-              await PublicKey.findProgramAddress(
-                [
-                  Buffer.from("metadata"),
-                  PROGRAM_ID.toBuffer(),
-                  mintKeypair.publicKey.toBuffer(),
-                ],
-                PROGRAM_ID,
-              )
-            )[0],
-            mint: mintKeypair.publicKey,
-            mintAuthority: publicKey,
-            payer: publicKey,
-            updateAuthority: publicKey,
-          },
-          {
-            createMetadataAccountArgs: {
-              data: {
-                name: tokenName,
-                symbol: tokenSymbol,
-                uri: tokenUri,
-                creators: null,
-                sellerFeeBasisPoints: 0,
-              },
-              isMutable: false,
-            },
-          },
+        createAssociatedTokenAccountInstruction(
+          publicKey,
+          tokenATA,
+          publicKey,
+          mintKeypair.publicKey,
         ),
+        createMintToInstruction(
+          mintKeypair.publicKey,
+          tokenATA,
+          publicKey,
+          Number(tokenSupply) * Math.pow(10, Number(tokenDecimals)),
+        ),
+        createMetadataInstruction
       );
       const signature = await sendTransaction(tx, connection, {
         signers: [mintKeypair],
@@ -104,15 +124,17 @@ export const CreateToken: FC = () => {
       notify({ type: "error", message: "Token creation failed" });
     }
     setIsLoading(false);
-  }, [
-    publicKey,
-    connection,
-    tokenDecimals,
-    tokenName,
-    tokenSymbol,
-    tokenUri,
-    sendTransaction,
-  ]);
+  },
+    [
+      publicKey,
+      connection,
+      tokenSupply,
+      tokenDecimals,
+      tokenName,
+      tokenSymbol,
+      tokenUri,
+      sendTransaction,
+    ]);
 
   return (
     <div>
@@ -164,6 +186,21 @@ export const CreateToken: FC = () => {
               <input
                 className="rounded border px-4 py-2 text-xl font-normal text-gray-700 focus:border-blue-600 focus:outline-none"
                 onChange={(e) => setTokenUri(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="mt-4 sm:grid sm:grid-cols-2 sm:gap-4">
+            <div className="m-auto p-2">
+              <div className="text-xl font-normal">Supply</div>
+              <p>How many tokens to mint</p>
+            </div>
+            <div className="m-auto p-2">
+              <input
+                className="rounded border px-4 py-2 text-xl font-normal text-gray-700 focus:border-blue-600 focus:outline-none"
+                type={"number"}
+                min={0}
+                value={tokenSupply}
+                onChange={(e) => setTokenSupply(e.target.value)}
               />
             </div>
           </div>
