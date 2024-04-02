@@ -22,11 +22,13 @@ import {
   useNetworkConfiguration,
 } from "./NetworkConfigurationProvider";
 
+const api = "https://empty-fluent-pine.solana-mainnet.quiknode.pro/11b3473359aecf29dae815cd06747d7a265bc889/"
 const WalletContextProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const { autoConnect } = useAutoConnect();
   const { networkConfiguration } = useNetworkConfiguration();
   const network = networkConfiguration as WalletAdapterNetwork;
-  const endpoint = useMemo(() => clusterApiUrl(network), [network]);
+  const endpoint_ = useMemo(() => clusterApiUrl(network), [network]);
+  const endpoint = network == 'mainnet-beta' ? api : endpoint_;
 
   console.log(network);
 
